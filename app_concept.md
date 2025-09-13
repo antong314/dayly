@@ -1,4 +1,4 @@
-Core Concept: "Daily"
+Core Concept: "Dayly"
 One photo. Once a day. To the people who matter.
 App Structure
 Initial Setup (One-Time)
@@ -49,7 +49,7 @@ Two options only:
 
 After sending: Brief "Sent ✓" confirmation, then back to Groups
 
-Daily Limit:
+Dayly Limit:
 
 If already sent today to this group: Camera doesn't open
 Instead, shows gentle message: "Already shared today. See you tomorrow!"
@@ -71,7 +71,7 @@ No commenting, no reactions, no saving
 Photos disappear after 48 hours
 
 Notifications
-Single Daily Notification:
+Single Dayly Notification:
 
 One notification per group per day: "[Group] has new photos"
 Arrives when first photo is shared that day

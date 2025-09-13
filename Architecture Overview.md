@@ -134,7 +134,7 @@ Week 5-6: Photo Viewing
 Today's photos viewer
 48-hour auto-cleanup
 Push notifications
-Daily send limit enforcement
+Dayly send limit enforcement
 
 Week 7-8: Polish
 
@@ -210,7 +210,7 @@ Monitoring (Minimal)
 
 Sentry for error tracking (free tier)
 DigitalOcean metrics for server health
-Simple analytics: Daily active users, photos sent
+Simple analytics: Dayly active users, photos sent
 
 Cost Projections
 At Launch (100 users):
