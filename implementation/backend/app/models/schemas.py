@@ -1,4 +1,4 @@
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, Field
 from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
@@ -46,8 +46,20 @@ class User(UserBase):
 class GroupBase(BaseModel):
     name: str
 
-class GroupCreate(GroupBase):
-    pass
+class GroupCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    member_phone_numbers: List[str] = []
+    
+    @validator('name')
+    def validate_name(cls, v):
+        return v.strip()
+    
+    @validator('member_phone_numbers')
+    def validate_phone_numbers(cls, v):
+        for phone in v:
+            if not re.match(r'^\+[1-9]\d{1,14}$', phone):
+                raise ValueError(f'Invalid phone number format: {phone}')
+        return v
 
 class Group(GroupBase):
     id: UUID
@@ -57,6 +69,34 @@ class Group(GroupBase):
     
     class Config:
         from_attributes = True
+
+class MemberResponse(BaseModel):
+    id: str
+    first_name: Optional[str]
+
+class LastPhotoResponse(BaseModel):
+    created_at: datetime
+    sender_id: str
+    sender_name: str = "Unknown"
+
+class GroupResponse(BaseModel):
+    id: str
+    name: str
+    created_at: datetime
+    member_count: int
+    members: List[MemberResponse]
+    has_sent_today: bool
+    last_photo: Optional[LastPhotoResponse]
+
+class AddMembers(BaseModel):
+    phone_numbers: List[str]
+    
+    @validator('phone_numbers')
+    def validate_phone_numbers(cls, v):
+        for phone in v:
+            if not re.match(r'^\+[1-9]\d{1,14}$', phone):
+                raise ValueError(f'Invalid phone number format: {phone}')
+        return v
 
 # Photo schemas
 class PhotoBase(BaseModel):
@@ -71,6 +111,26 @@ class Photo(PhotoBase):
     
     class Config:
         from_attributes = True
+
+class PhotoUploadResponse(BaseModel):
+    photo_id: str
+    expires_at: datetime
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+class UploadURLRequest(BaseModel):
+    group_id: str
+
+class PhotoResponse(BaseModel):
+    id: str
+    sender_id: str
+    sender_name: str
+    url: str
+    created_at: datetime
+    expires_at: datetime
 
 # Invite schemas
 class InviteCreate(BaseModel):

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from app.api import auth
+from app.api import auth, groups, photos
 from app.core.supabase import init_supabase
 
 @asynccontextmanager
@@ -29,5 +29,7 @@ async def root():
 async def health_check():
     return {"status": "healthy", "version": "1.0.0"}
 
-# Include auth router
+# Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(groups.router)
+app.include_router(photos.router)
