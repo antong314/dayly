@@ -8,6 +8,7 @@ protocol PhotoRepositoryProtocol {
     func deleteExpiredPhotos() async throws
     func syncPhotos(for groupId: UUID) async throws
     func deletePhoto(_ photoId: UUID) async throws
+    func isPhotoCached(_ photoId: UUID) async -> Bool
 }
 
 class PhotoRepository: PhotoRepositoryProtocol {
@@ -68,7 +69,11 @@ class PhotoRepository: PhotoRepositoryProtocol {
     
     func savePhoto(_ photo: Photo) async throws {
         // Save to Core Data
-        try coreDataStack.save(context: photo.managedObjectContext)
+        guard let context = photo.managedObjectContext else {
+            throw CoreDataError.saveFailed(NSError(domain: "PhotoRepository", code: 1, userInfo: [NSLocalizedDescriptionKey: "Photo has no managed object context"]))
+        }
+        
+        try coreDataStack.save(context: context)
         
         // If we have image data, cache it locally
         if let remoteUrl = photo.remoteUrl,
@@ -76,11 +81,11 @@ class PhotoRepository: PhotoRepositoryProtocol {
            networkService.isConnected {
             do {
                 let imageData = try await downloadImageData(from: url)
-                let localPath = try photoCacheManager.cachePhoto(imageData, for: photo.id)
-                
-                // Update photo with local path
-                photo.localPath = localPath.path
-                try coreDataStack.save(context: photo.managedObjectContext)
+                if let localPath = await photoCacheManager.cachePhoto(imageData, for: photo.id) {
+                    // Update photo with local path
+                    photo.localPath = localPath.path
+                }
+                try coreDataStack.save(context: context)
             } catch {
                 print("Failed to cache photo: \(error)")
             }
@@ -90,29 +95,37 @@ class PhotoRepository: PhotoRepositoryProtocol {
     // MARK: - Delete Expired Photos
     
     func deleteExpiredPhotos() async throws {
-        try await coreDataStack.performBackgroundTask { context in
+        // First get the photos to delete
+        let photosToDelete = try await coreDataStack.performBackgroundTask { context in
             let request = Photo.fetchRequest()
             request.predicate = NSPredicate(format: "expiresAt < %@", Date() as NSDate)
             
             do {
                 let expiredPhotos = try context.fetch(request)
                 
-                // Delete cached images
+                // Collect paths to delete
+                let pathsToDelete = expiredPhotos.compactMap { $0.localPath }
+                
+                // Delete from Core Data
                 for photo in expiredPhotos {
-                    if let localPath = photo.localPath {
-                        try? self.photoCacheManager.deleteCachedPhoto(at: localPath)
-                    }
                     context.delete(photo)
                 }
                 
                 try context.save()
+                
+                return pathsToDelete
             } catch {
                 throw CoreDataError.fetchFailed(error as NSError)
             }
         }
         
+        // Delete cached images
+        for path in photosToDelete {
+            try? await photoCacheManager.deleteCachedPhoto(at: path)
+        }
+        
         // Also clean up orphaned cache files
-        photoCacheManager.clearExpiredPhotos()
+        await photoCacheManager.clearExpiredPhotos()
     }
     
     // MARK: - Sync Photos
@@ -138,66 +151,87 @@ class PhotoRepository: PhotoRepositoryProtocol {
     }
     
     private func syncLocalPhotos(_ remotePhotos: [PhotoDTO], for groupId: UUID) async throws {
-        try await coreDataStack.performBackgroundTask { context in
-            // Get existing photos for this group
+        // First, determine which photos need to be added
+        let photosToAdd = try await coreDataStack.performBackgroundTask { context in
             let request = Photo.fetchRequest()
             request.predicate = NSPredicate(format: "groupId == %@", groupId as CVarArg)
             let existingPhotos = try context.fetch(request)
             let existingPhotoIds = Set(existingPhotos.map { $0.id.uuidString })
             
-            // Add new photos from remote
-            for remotePhoto in remotePhotos {
-                if !existingPhotoIds.contains(remotePhoto.id) {
-                    let photo = remotePhoto.toCoreDataPhoto(in: context)
-                    
-                    // Download and cache the photo
-                    if let url = URL(string: remotePhoto.url) {
-                        do {
-                            let imageData = try await self.downloadImageData(from: url)
-                            let localPath = try self.photoCacheManager.cachePhoto(imageData, for: photo.id)
-                            photo.localPath = localPath.path
-                        } catch {
-                            print("Failed to cache photo \(remotePhoto.id): \(error)")
-                        }
-                    }
-                }
+            // Filter remote photos that don't exist locally
+            return remotePhotos.filter { !existingPhotoIds.contains($0.id) }
+        }
+        
+        // Process each new photo
+        for remotePhoto in photosToAdd {
+            // Create photo in Core Data
+            let photoId = try await coreDataStack.performBackgroundTask { context in
+                let photo = remotePhoto.toCoreDataPhoto(in: context)
+                try context.save()
+                return photo.id
             }
             
-            try context.save()
+            // Download and cache the photo
+            if let url = URL(string: remotePhoto.url) {
+                do {
+                    let imageData = try await self.downloadImageData(from: url)
+                    if let localPath = await self.photoCacheManager.cachePhoto(imageData, for: photoId) {
+                        // Update photo with local path
+                        try await coreDataStack.performBackgroundTask { context in
+                            let request = Photo.fetchRequest()
+                            request.predicate = NSPredicate(format: "id == %@", photoId as CVarArg)
+                            if let photo = try context.fetch(request).first {
+                                photo.localPath = localPath.path
+                                try context.save()
+                            }
+                        }
+                    }
+                } catch {
+                    print("Failed to cache photo \(remotePhoto.id): \(error)")
+                }
+            }
         }
     }
     
     // MARK: - Delete Photo
     
     func deletePhoto(_ photoId: UUID) async throws {
-        try await coreDataStack.performBackgroundTask { context in
+        // First get the photo's local path
+        let localPath = try await coreDataStack.performBackgroundTask { context in
             let request = Photo.fetchRequest()
             request.predicate = NSPredicate(format: "id == %@", photoId as CVarArg)
             
             if let photo = try context.fetch(request).first {
-                // Delete cached image
-                if let localPath = photo.localPath {
-                    try? self.photoCacheManager.deleteCachedPhoto(at: localPath)
-                }
-                
+                let path = photo.localPath
                 context.delete(photo)
                 try context.save()
+                return path
             }
+            return nil
+        }
+        
+        // Delete cached image if exists
+        if let path = localPath {
+            try? await photoCacheManager.deleteCachedPhoto(at: path)
         }
     }
     
     func isPhotoCached(_ photoId: UUID) async -> Bool {
-        return await coreDataStack.performBackgroundTask { context in
-            let request = Photo.fetchRequest()
-            request.predicate = NSPredicate(format: "id == %@", photoId as CVarArg)
-            request.fetchLimit = 1
-            
-            do {
-                let count = try context.count(for: request)
-                return count > 0
-            } catch {
-                return false
+        do {
+            return try await coreDataStack.performBackgroundTask { context in
+                let request = Photo.fetchRequest()
+                request.predicate = NSPredicate(format: "id == %@", photoId as CVarArg)
+                request.fetchLimit = 1
+                
+                do {
+                    let count = try context.count(for: request)
+                    return count > 0
+                } catch {
+                    return false
+                }
             }
+        } catch {
+            return false
         }
     }
     

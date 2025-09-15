@@ -126,65 +126,8 @@ class SyncManager: ObservableObject {
     }
     
     private func syncPhotos(for groupId: UUID) async throws {
-        // Fetch today's photos from backend
-        let endpoint = "/api/photos/\(groupId.uuidString.lowercased())/today"
-        
-        do {
-            let remotePhotos: [PhotoResponse] = try await networkService.request(
-                endpoint: endpoint,
-                method: .get,
-                responseType: [PhotoResponse].self
-            )
-            
-            // Update local cache
-            for remotePhoto in remotePhotos {
-                // Check if already cached
-                let photoId = UUID(uuidString: remotePhoto.id) ?? UUID()
-                
-                // Skip if we already have this photo locally
-                if await photoRepository.isPhotoCached(photoId) {
-                    continue
-                }
-                
-                // Download and cache the photo
-                if let url = URL(string: remotePhoto.url) {
-                    do {
-                        let (data, _) = try await URLSession.shared.data(from: url)
-                        
-                        // Cache the photo
-                        let context = coreDataStack.newBackgroundContext()
-                        try await context.perform {
-                            let photo = Photo(context: context)
-                            photo.id = photoId
-                            photo.groupId = groupId
-                            photo.senderId = UUID(uuidString: remotePhoto.sender_id) ?? UUID()
-                            photo.senderName = remotePhoto.sender_name
-                            photo.createdAt = remotePhoto.created_at
-                            photo.expiresAt = remotePhoto.expires_at
-                            photo.remoteUrl = remotePhoto.url
-                            
-                            // Save image locally
-                            if let localPath = PhotoCacheManager.shared.cachePhoto(data, for: photoId) {
-                                photo.localPath = localPath.path
-                            }
-                            
-                            try context.save()
-                        }
-                    } catch {
-                        print("Failed to download/cache photo \(remotePhoto.id): \(error)")
-                    }
-                }
-            }
-            
-            // Clean expired photos
-            try await photoRepository.deleteExpiredPhotos()
-            
-        } catch NetworkError.unauthorized {
-            throw NetworkError.unauthorized
-        } catch {
-            print("Photo sync failed: \(error)")
-            throw error
-        }
+        // Use the photoRepository to sync photos instead of directly accessing network
+        try await photoRepository.syncPhotos(for: groupId)
     }
     
     // MARK: - Private Methods

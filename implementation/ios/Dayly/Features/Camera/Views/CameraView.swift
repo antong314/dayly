@@ -122,7 +122,8 @@ struct CameraView: View {
         .preferredColorScheme(.dark)
         .task {
             // Check permissions
-            if !await cameraService.checkPermissions() {
+            let hasPermissions = await cameraService.checkPermissions()
+            if !hasPermissions {
                 let granted = await cameraService.requestPermissions()
                 if !granted {
                     showingPermissionDenied = true
@@ -131,7 +132,8 @@ struct CameraView: View {
             }
             
             // Check daily limit
-            if await viewModel.hasAlreadySentToday() {
+            let hasSentToday = await viewModel.hasAlreadySentToday()
+            if hasSentToday {
                 showingDaylyLimit = true
             }
         }

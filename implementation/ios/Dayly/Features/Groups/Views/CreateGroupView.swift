@@ -68,8 +68,12 @@ struct CreateGroupView: View {
                 // Error message
                 if let error = viewModel.error {
                     Text(error.localizedDescription)
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundColor(.red)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(8)
                         .padding(.horizontal)
                 }
             }
@@ -85,13 +89,17 @@ struct CreateGroupView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Create") {
+                        // Clear previous error
+                        viewModel.error = nil
+                        
                         Task {
                             if await viewModel.createGroup(name: groupName.trimmingCharacters(in: .whitespacesAndNewlines)) {
                                 dismiss()
                             }
+                            // If creation failed, error will be shown
                         }
                     }
-                    .fontWeight(.semibold)
+                    .font(.body.weight(.semibold))
                     .disabled(groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || 
                              viewModel.selectedContacts.isEmpty || 
                              viewModel.isCreating)
@@ -117,7 +125,7 @@ struct CreateGroupView: View {
     }
 }
 
-struct ContactRow: View {
+private struct ContactRow: View {
     let contact: Contact
     let onRemove: () -> Void
     
@@ -153,12 +161,7 @@ struct ContactRow: View {
     }
 }
 
-// Contact model
-struct Contact: Identifiable, Equatable {
-    let id: String
-    let firstName: String
-    let phoneNumber: String
-}
+// Contact model is now in ContactService.swift
 
 struct CreateGroupView_Previews: PreviewProvider {
     static var previews: some View {

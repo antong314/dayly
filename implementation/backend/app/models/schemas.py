@@ -1,12 +1,19 @@
 from pydantic import BaseModel, validator, Field
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 from uuid import UUID
 import re
 
 # Authentication schemas
 class PhoneVerification(BaseModel):
     phone_number: str
+    channel: str = "sms"  # Supabase only supports SMS for now
+    
+    @validator('channel')
+    def validate_channel(cls, v):
+        if v not in ["sms", "whatsapp"]:
+            raise ValueError("Channel must be 'sms' or 'whatsapp'")
+        return v
     
     @validator('phone_number')
     def validate_phone(cls, v):
@@ -132,10 +139,63 @@ class PhotoResponse(BaseModel):
     created_at: datetime
     expires_at: datetime
 
+# Device schemas
+class DeviceRegistration(BaseModel):
+    device_token: str
+    platform: str = "ios"
+    
+    @validator('device_token')
+    def validate_token(cls, v):
+        # Basic validation for APNS token format (64 hex characters)
+        if not re.match(r'^[a-fA-F0-9]{64}$', v):
+            raise ValueError('Invalid device token format')
+        return v
+    
+    @validator('platform')
+    def validate_platform(cls, v):
+        if v not in ['ios', 'android']:
+            raise ValueError('Platform must be ios or android')
+        return v
+
 # Invite schemas
+class CheckUsersRequest(BaseModel):
+    phone_numbers: List[str]
+    
+    @validator('phone_numbers')
+    def validate_phone_numbers(cls, v):
+        for phone in v:
+            if not re.match(r'^\+[1-9]\d{1,14}$', phone):
+                raise ValueError(f'Invalid phone number format: {phone}')
+        return v
+
+class ExistingUserInfo(BaseModel):
+    phone_number: str
+    user_id: str
+    first_name: str
+
+class SendInvitesRequest(BaseModel):
+    group_id: str
+    phone_numbers: List[str]
+    existing_users: List[Dict[str, str]] = []
+    
+    @validator('phone_numbers')
+    def validate_phone_numbers(cls, v):
+        for phone in v:
+            if not re.match(r'^\+[1-9]\d{1,14}$', phone):
+                raise ValueError(f'Invalid phone number format: {phone}')
+        return v
+
 class InviteCreate(BaseModel):
     group_id: UUID
     phone_number: str
+
+class InviteResponse(BaseModel):
+    id: str
+    code: str
+    phone_number: str
+    invited_by_name: str
+    created_at: datetime
+    expires_at: datetime
 
 class Invite(BaseModel):
     id: UUID

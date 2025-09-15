@@ -80,7 +80,7 @@ All APIs follow RESTful conventions:
 - Repository pattern for data access
 
 ## Current Phase Context
-- Phase 0-6 Complete ✅
+- Phase 0-8 Complete ✅
 - Full authentication system working
 - Groups management with UI
 - Camera capture with daily limits
@@ -88,6 +88,9 @@ All APIs follow RESTful conventions:
 - Background uploads and retry logic
 - Photo sync across devices
 - Beautiful photo viewing with swipe navigation
+- Push notifications with deep linking
+- Contact integration and SMS invites
+- Complete onboarding flow
 
 ---
 

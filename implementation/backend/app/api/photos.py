@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from typing import List, Optional
 from datetime import datetime, timedelta
 from app.core.security import get_current_user
 from app.core.supabase import get_supabase
 from app.models.schemas import PhotoUploadResponse, UploadURLRequest, PhotoResponse
+from app.services import schedule_group_notification
 import uuid
 import io
 
@@ -11,6 +12,7 @@ router = APIRouter(prefix="/api/photos", tags=["photos"])
 
 @router.post("/upload", response_model=PhotoUploadResponse)
 async def upload_photo(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     group_id: str = Form(...),
     user_id: str = Depends(get_current_user),
@@ -93,7 +95,12 @@ async def upload_photo(
             "sent_date": today
         }).execute()
         
-        # TODO: Trigger notification for group members (Phase 7)
+        # Trigger notification for group members
+        background_tasks.add_task(
+            schedule_group_notification, 
+            group_id, 
+            user_id
+        )
         
         return PhotoUploadResponse(
             photo_id=photo_record.data[0]["id"],

@@ -1,10 +1,17 @@
+//
+//  CoreDataModels.swift
+//  Dayly
+//
+//  Core Data entity definitions and extensions
+//
+
 import Foundation
 import CoreData
 
 // MARK: - Core Data Entity Definitions
-// Note: These correspond to entities that should be defined in Dayly.xcdatamodeld
 
-extension User {
+@objc(User)
+public class User: NSManagedObject {
     @nonobjc public class func fetchRequest() -> NSFetchRequest<User> {
         return NSFetchRequest<User>(entityName: "User")
     }
@@ -14,7 +21,8 @@ extension User {
     @NSManaged public var firstName: String?
 }
 
-extension Group {
+@objc(Group)
+public class Group: NSManagedObject {
     @nonobjc public class func fetchRequest() -> NSFetchRequest<Group> {
         return NSFetchRequest<Group>(entityName: "Group")
     }
@@ -27,22 +35,8 @@ extension Group {
     @NSManaged public var members: NSSet?
 }
 
-// MARK: - Group Core Data Generated Accessors
-extension Group {
-    @objc(addMembersObject:)
-    @NSManaged public func addToMembers(_ value: GroupMember)
-    
-    @objc(removeMembersObject:)
-    @NSManaged public func removeFromMembers(_ value: GroupMember)
-    
-    @objc(addMembers:)
-    @NSManaged public func addToMembers(_ values: NSSet)
-    
-    @objc(removeMembers:)
-    @NSManaged public func removeFromMembers(_ values: NSSet)
-}
-
-extension GroupMember {
+@objc(GroupMember)
+public class GroupMember: NSManagedObject {
     @nonobjc public class func fetchRequest() -> NSFetchRequest<GroupMember> {
         return NSFetchRequest<GroupMember>(entityName: "GroupMember")
     }
@@ -53,7 +47,8 @@ extension GroupMember {
     @NSManaged public var group: Group?
 }
 
-extension Photo {
+@objc(Photo)
+public class Photo: NSManagedObject {
     @nonobjc public class func fetchRequest() -> NSFetchRequest<Photo> {
         return NSFetchRequest<Photo>(entityName: "Photo")
     }
@@ -68,7 +63,8 @@ extension Photo {
     @NSManaged public var expiresAt: Date
 }
 
-extension Daily_sends {
+@objc(Daily_sends)
+public class Daily_sends: NSManagedObject {
     @nonobjc public class func fetchRequest() -> NSFetchRequest<Daily_sends> {
         return NSFetchRequest<Daily_sends>(entityName: "Daily_sends")
     }

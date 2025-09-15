@@ -71,7 +71,10 @@ class NetworkService: NetworkServiceProtocol {
         return true
     }
     
-    init(baseURL: String = "http://localhost:8000") {
+    // IMPORTANT: Update this with your Mac's IP address when testing on a real device
+    // Example: "http://192.168.1.123:8000"
+    // Get your IP: Hold Option key → Click WiFi icon → Note your IP address
+    init(baseURL: String = "http://192.168.68.59:8000") {
         self.baseURL = baseURL
         
         let configuration = URLSessionConfiguration.default
@@ -176,6 +179,38 @@ class NetworkService: NetworkServiceProtocol {
         
         return data
     }
+    
+    // MARK: - Device Token Registration
+    
+    func registerDeviceToken(_ token: String) async throws {
+        struct DeviceRegistration: Encodable {
+            let device_token: String
+            let platform: String = "ios"
+        }
+        
+        let registration = DeviceRegistration(device_token: token)
+        let body = try JSONEncoder().encode(registration)
+        
+        let _: SuccessResponse = try await request(
+            endpoint: "/api/devices/register",
+            method: .post,
+            body: body,
+            responseType: SuccessResponse.self
+        )
+    }
+    
+    func unregisterDeviceToken(_ token: String) async throws {
+        let _: SuccessResponse = try await request(
+            endpoint: "/api/devices/unregister?device_token=\(token)",
+            method: .delete,
+            responseType: SuccessResponse.self
+        )
+    }
+}
+
+// MARK: - Response Models
+private struct SuccessResponse: Decodable {
+    let success: Bool
 }
 
 // MARK: - Singleton

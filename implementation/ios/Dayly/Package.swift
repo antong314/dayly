@@ -14,7 +14,8 @@ let package = Package(
             name: "Dayly",
             dependencies: [
                 .product(name: "Supabase", package: "supabase-swift")
-            ]
+            ],
+            path: "."
         )
     ]
 )

@@ -49,7 +49,7 @@ actor PhotoCacheManager {
         }
     }
     
-    func cachePhoto(_ data: Data, for photoId: UUID) -> URL? {
+    func cachePhoto(_ data: Data, for photoId: UUID) async -> URL? {
         let fileName = "\(photoId.uuidString).jpg"
         let fileURL = cacheDirectory.appendingPathComponent(fileName)
         
@@ -59,7 +59,7 @@ actor PhotoCacheManager {
             
             // Also cache in memory if we can create an image
             if let image = UIImage(data: data) {
-                Task { @MainActor in
+                await MainActor.run {
                     memoryCache.setObject(image, forKey: photoId.uuidString as NSString, cost: data.count)
                 }
             }
@@ -93,12 +93,12 @@ actor PhotoCacheManager {
         return nil
     }
     
-    func deleteCachedPhoto(at path: String) throws {
+    func deleteCachedPhoto(at path: String) async throws {
         let url = URL(fileURLWithPath: path)
         let photoId = url.deletingPathExtension().lastPathComponent
         
         // Remove from memory cache
-        Task { @MainActor in
+        await MainActor.run {
             memoryCache.removeObject(forKey: photoId as NSString)
         }
         
@@ -154,13 +154,14 @@ actor PhotoCacheManager {
     
     private func startCleanupTimer() async {
         // Run cleanup every hour
-        await MainActor.run {
-            cleanupTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
+        let timer = await MainActor.run {
+            Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
                 Task {
                     await self.clearExpiredPhotos()
                 }
             }
         }
+        self.cleanupTimer = timer
     }
     
     private func setupMemoryWarningObserver() async {

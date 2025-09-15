@@ -209,21 +209,7 @@ struct DailyStatusResponse: Decodable {
     }
 }
 
-struct SuccessResponse: Decodable {
+private struct SuccessResponse: Decodable {
     let success: Bool
 }
 
-// MARK: - Temporary Auth Manager
-
-class AuthManager {
-    static let shared = AuthManager()
-    
-    var currentUserId: String? {
-        // In production, this would come from Keychain
-        return UserDefaults.standard.string(forKey: "user_id")
-    }
-    
-    var currentUserName: String? {
-        return UserDefaults.standard.string(forKey: "user_name") ?? "Me"
-    }
-}

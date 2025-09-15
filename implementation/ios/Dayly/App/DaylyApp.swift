@@ -1,9 +1,27 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 
 // MARK: - App Delegate
 
 class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil
+    ) -> Bool {
+        // Set up notifications
+        Task {
+            await NotificationService.shared.registerForPushNotifications()
+        }
+        
+        // Check if launched from notification
+        if let notification = launchOptions?[.remoteNotification] as? [String: Any] {
+            handleLaunchNotification(notification)
+        }
+        
+        return true
+    }
+    
     func application(
         _ application: UIApplication,
         handleEventsForBackgroundURLSession identifier: String,
@@ -15,6 +33,69 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             completionHandler: completionHandler
         )
     }
+    
+    // MARK: - Push Notifications
+    
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        let token = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+        print("📱 Device token: \(token)")
+        
+        // Register with backend
+        Task {
+            do {
+                try await NetworkService.shared.registerDeviceToken(token)
+                print("✅ Device token registered with backend")
+            } catch {
+                print("❌ Failed to register device token: \(error)")
+            }
+        }
+    }
+    
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        print("❌ Failed to register for notifications: \(error)")
+        
+        // In simulator, this is expected
+        #if targetEnvironment(simulator)
+        print("ℹ️ Push notifications are not supported in the simulator")
+        #endif
+    }
+    
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable : Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        print("📬 Received remote notification: \(userInfo)")
+        
+        // Handle notification data
+        if let groupId = userInfo["group_id"] as? String,
+           let type = userInfo["type"] as? String,
+           type == "new_photos" {
+            // Trigger sync for this group
+            Task {
+                if let uuid = UUID(uuidString: groupId) {
+                    await SyncManager.shared.syncGroup(uuid)
+                }
+                completionHandler(.newData)
+            }
+        } else {
+            completionHandler(.noData)
+        }
+    }
+    
+    private func handleLaunchNotification(_ userInfo: [String: Any]) {
+        if let groupId = userInfo["group_id"] as? String,
+           let uuid = UUID(uuidString: groupId) {
+            // Store for handling after app launches
+            NotificationService.shared.pendingGroupId = uuid
+        }
+    }
 }
 
 // MARK: - Main App
@@ -24,6 +105,9 @@ struct DaylyApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     let coreDataStack = CoreDataStack.shared
     @StateObject private var syncManager = SyncManager.shared
+    @StateObject private var notificationService = NotificationService.shared
+    @State private var selectedGroupId: UUID?
+    @State private var showPhotoViewer = false
     
     init() {
         // Initialize Core Data
@@ -41,9 +125,44 @@ struct DaylyApp: App {
             ContentView()
                 .environment(\.managedObjectContext, coreDataStack.viewContext)
                 .environmentObject(syncManager)
+                .environmentObject(notificationService)
                 .onAppear {
                     Task {
                         await syncManager.syncOnAppLaunch()
+                    }
+                }
+                .onOpenURL { url in
+                    handleDeepLink(url)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .openGroupPhotos)) { notification in
+                    if let groupId = notification.userInfo?["groupId"] as? UUID {
+                        // Handle deep link to group photos
+                        selectedGroupId = groupId
+                        showPhotoViewer = true
+                    }
+                }
+                .onReceive(notificationService.pendingGroupIdPublisher) { groupId in
+                    // Handle pending notification on app launch
+                    if let groupId = groupId {
+                        selectedGroupId = groupId
+                        showPhotoViewer = true
+                        // Clear the pending group ID
+                        Task { @MainActor in
+                            notificationService.pendingGroupId = nil
+                        }
+                    }
+                }
+                .fullScreenCover(isPresented: $showPhotoViewer) {
+                    if let groupId = selectedGroupId {
+                        // Find group name from the groups list
+                        // For now, we'll use a placeholder
+                        PhotoViewerView(groupId: groupId, groupName: "Group")
+                            .onDisappear {
+                                selectedGroupId = nil
+                                showPhotoViewer = false
+                                // Clear badge when viewing photos
+                                notificationService.clearBadge()
+                            }
                     }
                 }
         }
@@ -76,6 +195,48 @@ struct DaylyApp: App {
             }
         }
     }
+    
+    private func handleDeepLink(_ url: URL) {
+        // Handle invite links: dayly://invite?code=ABC123
+        if url.scheme == "dayly" && url.host == "invite",
+           let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let code = components.queryItems?.first(where: { $0.name == "code" })?.value {
+            
+            // Check if authenticated
+            if UserDefaults.standard.bool(forKey: "isAuthenticated") {
+                // Redeem immediately
+                Task {
+                    await redeemInvite(code: code)
+                }
+            } else {
+                // Save for after onboarding
+                UserDefaults.standard.set(url.absoluteString, forKey: "pendingInviteURL")
+            }
+        }
+    }
+    
+    private func redeemInvite(code: String) async {
+        do {
+            struct RedeemResponse: Decodable {
+                let group_id: String
+                let group_name: String
+            }
+            
+            let response: RedeemResponse = try await NetworkService.shared.request(
+                endpoint: "/api/invites/redeem/\(code)",
+                method: .post,
+                responseType: RedeemResponse.self
+            )
+            
+            print("✅ Joined group via invite: \(response.group_name)")
+            
+            // Refresh groups
+            await syncManager.performSync()
+            
+        } catch {
+            print("❌ Failed to redeem invite: \(error)")
+        }
+    }
 }
 
 // Main app view that shows groups or authentication
@@ -95,14 +256,24 @@ struct ContentView: View {
                     }
                 }
         } else {
-            // Show authentication view (to be implemented in Phase 1 UI)
-            AuthPlaceholderView()
+            // Show authentication view
+            OnboardingView()
+                .onReceive(NotificationCenter.default.publisher(for: .onboardingCompleted)) { _ in
+                    // Refresh app state after onboarding
+                    Task {
+                        await syncManager.syncOnAppLaunch()
+                    }
+                }
         }
     }
 }
 
 // Temporary placeholder for authentication - will be replaced with proper auth UI
 struct AuthPlaceholderView: View {
+    @AppStorage("isAuthenticated") private var isAuthenticated = false
+    @AppStorage("authToken") private var authToken: String?
+    @State private var showingDevBypass = false
+    
     var body: some View {
         NavigationView {
             VStack(spacing: 30) {
@@ -123,6 +294,34 @@ struct AuthPlaceholderView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.top, 50)
+                
+                // Temporary dev bypass button
+                #if DEBUG
+                Button(action: {
+                    showingDevBypass = true
+                }) {
+                    Text("Developer Bypass")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                        .padding(.top, 20)
+                }
+                .alert("Skip Authentication?", isPresented: $showingDevBypass) {
+                    Button("Cancel", role: .cancel) { }
+                    Button("Skip", role: .destructive) {
+                        // Set mock authentication values
+                        isAuthenticated = true
+                        authToken = "dev-bypass-token"
+                        UserDefaults.standard.set("test-user-id", forKey: "user_id")
+                        UserDefaults.standard.set("Test User", forKey: "user_name")
+                        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+                        
+                        // Initialize network service with mock token
+                        NetworkService.shared.setAuthToken("dev-bypass-token")
+                    }
+                } message: {
+                    Text("This will bypass authentication for development testing. Use only in development.")
+                }
+                #endif
             }
             .padding()
             .navigationBarHidden(true)

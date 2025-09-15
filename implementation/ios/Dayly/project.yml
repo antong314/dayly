@@ -1,0 +1,32 @@
+name: Dayly
+options:
+  bundleIdPrefix: com.dayly
+  deploymentTarget:
+    iOS: 15.0
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    INFOPLIST_FILE: "App/Info.plist"
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    PRODUCT_BUNDLE_IDENTIFIER: "com.dayly.app"
+
+targets:
+  Dayly:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Core
+      - Features
+      - Models
+    resources:
+      - Resources
+      - Core/Storage/Dayly.xcdatamodeld
+    settings:
+      base:
+        INFOPLIST_FILE: "App/Info.plist"
+        TARGETED_DEVICE_FAMILY: "1"

@@ -1,6 +1,7 @@
 import Foundation
 import CoreData
 import Combine
+import UIKit
 
 protocol GroupRepositoryProtocol {
     func fetchGroups() async throws -> [Group]
